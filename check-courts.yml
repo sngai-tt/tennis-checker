@@ -1,0 +1,56 @@
+name: Check tennis courts
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'     # every 5 minutes (GitHub may delay runs at busy times)
+  workflow_dispatch:           # lets you press "Run workflow" manually to test
+
+permissions:
+  contents: write              # needed to commit slots.json using the built-in token
+
+concurrency:
+  group: check-courts          # never run two checks at the same time
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Remember which slots we've already notified about.
+      # Caches can't be overwritten, so each run saves under a new key
+      # and the next run restores the most recent one via restore-keys.
+      - name: Restore seen_slots.json
+        uses: actions/cache@v4
+        with:
+          path: seen_slots.json
+          key: seen-slots-${{ github.run_id }}
+          restore-keys: |
+            seen-slots-
+
+      - name: Check courts
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python checker.py
+
+      # Only commits when slots.json actually changed.
+      - name: Publish slots.json for the dashboard
+        run: |
+          git config user.name "court-checker-bot"
+          git config user.email "court-checker-bot@users.noreply.github.com"
+          git add slots.json
+          if ! git diff --staged --quiet; then
+            git commit -m "Update slots"
+            git pull --rebase
+            git push
+          fi
