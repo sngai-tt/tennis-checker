@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Court Finder</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<!-- Makes it feel like an app when added to an iPhone home screen -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Courts">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#1f7a4d">
+<!-- App icon placeholder: optionally upload a 180x180 PNG named apple-touch-icon.png to the repo -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🎾%3C/text%3E%3C/svg%3E">
+
+<style>
+  :root {
+    --bg: #f4f6f5;
+    --card: #ffffff;
+    --text: #17211c;
+    --muted: #66726b;
+    --line: #e1e6e3;
+    --green: #1f7a4d;
+    --green-dark: #165c3a;
+    --warn: #b45309;
+    --warn-bg: #fff4e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101513;
+      --card: #1a211e;
+      --text: #e8efeb;
+      --muted: #94a39a;
+      --line: #2a3430;
+      --green: #3fae78;
+      --green-dark: #2f8c5f;
+      --warn: #f0b360;
+      --warn-bg: #2d2412;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  header { padding: 20px 0 8px; }
+  h1 { margin: 0; font-size: 24px; }
+  .updated { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  .filters {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--bg);
+    padding: 10px 0 12px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  select {
+    width: 100%; padding: 10px 12px; font-size: 16px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card); color: var(--text);
+  }
+
+  .summary { color: var(--muted); font-size: 14px; margin: 4px 0 12px; }
+
+  .notice {
+    background: var(--warn-bg); color: var(--warn);
+    border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px;
+  }
+
+  .venue {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; margin-bottom: 14px; overflow: hidden;
+  }
+  .venue h2 {
+    margin: 0; padding: 12px 14px; font-size: 17px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  }
+  .venue h2 a { color: inherit; text-decoration: none; }
+  .count { color: var(--muted); font-size: 13px; font-weight: 400; white-space: nowrap; }
+
+  .day {
+    padding: 6px 14px; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted);
+    background: var(--bg); border-top: 1px solid var(--line);
+  }
+  .slot {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 14px; border-top: 1px solid var(--line);
+  }
+  .slot .time { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .slot .court { color: var(--muted); font-size: 13px; }
+  .book {
+    flex: none; background: var(--green); color: #fff; text-decoration: none;
+    padding: 8px 16px; border-radius: 999px; font-size: 14px; font-weight: 600;
+  }
+  .book:active { background: var(--green-dark); }
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  .none-here { padding: 10px 14px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🎾 Court Finder</h1>
+    <div class="updated" id="updated">Loading…</div>
+  </header>
+
+  <div class="filters">
+    <select id="venueFilter" aria-label="Filter by venue"><option value="">All venues</option></select>
+    <select id="dayFilter" aria-label="Filter by day"><option value="">All days</option></select>
+  </div>
+
+  <div id="notice"></div>
+  <div class="summary" id="summary"></div>
+  <div id="list"></div>
+</main>
+
+<script>
+  let DATA = null;
+
+  const $ = (id) => document.getElementById(id);
+
+  // "2026-10-16" -> "Fri 16 Oct" (parsed as a plain date so time zones can't shift it)
+  function prettyDay(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  async function load() {
+    try {
+      // The ?t= part stops the browser using an old cached copy
+      const res = await fetch("slots.json?t=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      DATA = await res.json();
+    } catch (err) {
+      $("updated").textContent = "Couldn't load slot data yet.";
+      $("list").innerHTML = '<div class="empty">No data yet. Once the checker has run at least once, slots will appear here.</div>';
+      return;
+    }
+
+    // Fill the venue dropdown from the venue list
+    const vSel = $("venueFilter");
+    DATA.venues.forEach((v) => {
+      const o = document.createElement("option");
+      o.value = v.name; o.textContent = v.name;
+      vSel.appendChild(o);
+    });
+
+    // Fill the day dropdown from the days that have slots
+    const days = [...new Set(DATA.slots.map((s) => s.date))].sort();
+    const dSel = $("dayFilter");
+    days.forEach((d) => {
+      const o = document.createElement("option");
+      o.value = d; o.textContent = prettyDay(d);
+      dSel.appendChild(o);
+    });
+
+    const upd = new Date(DATA.updated);
+    $("updated").textContent = "Last updated " + upd.toLocaleString("en-GB", {
+      weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London"
+    });
+
+    render();
+  }
+
+  function render() {
+    const venueF = $("venueFilter").value;
+    const dayF = $("dayFilter").value;
+
+    // Warn about venues the checker couldn't read
+    const failed = DATA.venues.filter((v) => !v.ok);
+    $("notice").innerHTML = failed.length
+      ? '<div class="notice"><strong>Not checked:</strong> ' +
+        failed.map((v) => '<a href="' + esc(v.display_url) + '" style="color:inherit">' + esc(v.name) + "</a>").join(", ") +
+        ". Check these directly.</div>"
+      : "";
+
+    const slots = DATA.slots.filter((s) => (!venueF || s.venue === venueF) && (!dayF || s.date === dayF));
+    $("summary").textContent = slots.length + " free slot" + (slots.length === 1 ? "" : "s");
+
+    const venues = DATA.venues.filter((v) => v.ok && (!venueF || v.name === venueF));
+    let html = "";
+
+    for (const v of venues) {
+      const vs = slots.filter((s) => s.venue === v.name); // already sorted by date then time
+      html += '<section class="venue"><h2><a href="' + esc(v.display_url) + '">' + esc(v.name) +
+              '</a><span class="count">' + vs.length + " free</span></h2>";
+      if (!vs.length) {
+        html += '<div class="none-here">Nothing free right now</div>';
+      }
+      let lastDay = "";
+      for (const s of vs) {
+        if (s.date !== lastDay) {
+          html += '<div class="day">' + esc(prettyDay(s.date)) + "</div>";
+          lastDay = s.date;
+        }
+        html += '<div class="slot"><div><div class="time">' + esc(s.start) + "–" + esc(s.end) +
+                '</div><div class="court">' + esc(s.court) + '</div></div>' +
+                '<a class="book" href="' + esc(s.link) + '" target="_blank" rel="noopener">Book</a></div>';
+      }
+      html += "</section>";
+    }
+
+    $("list").innerHTML = html || '<div class="empty">No slots match your filters.</div>';
+  }
+
+  $("venueFilter").addEventListener("change", render);
+  $("dayFilter").addEventListener("change", render);
+  load();
+</script>
+</body>
+</html>
