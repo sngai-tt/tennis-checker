@@ -1,0 +1,69 @@
+{
+ "updated": "2026-10-16T07:39:08+01:00",
+ "venues": [
+  {
+   "name": "Archbishop's Park",
+   "ok": false,
+   "error": "ClientResponseError: 403, message='Forbidden', url='https://clubspark.lta.org.uk/ArchbishopsParkLambethNorth/Booking/GetVenueSessions?resourceID=&startDate=2026-10-16&endDate=2026-10-22&roleId='",
+   "display_url": "https://clubspark.lta.org.uk/ArchbishopsParkLambethNorth",
+   "booking_url": "https://clubspark.lta.org.uk/ArchbishopsParkLambethNorth/Booking/BookByDate"
+  },
+  {
+   "name": "Geraldine Mary Harmsworth",
+   "ok": false,
+   "error": "ClientResponseError: 403, message='Forbidden', url='https://clubspark.lta.org.uk/GeraldineMaryHarmsworth/Booking/GetVenueSessions?resourceID=&startDate=2026-10-16&endDate=2026-10-22&roleId='",
+   "display_url": "https://clubspark.lta.org.uk/GeraldineMaryHarmsworth",
+   "booking_url": "https://clubspark.lta.org.uk/GeraldineMaryHarmsworth/Booking/bookbycourt"
+  },
+  {
+   "name": "Battersea Park",
+   "ok": false,
+   "error": "ClientResponseError: 403, message='Forbidden', url='https://clubspark.lta.org.uk/BatterseaParkTennisCourts/Booking/GetVenueSessions?resourceID=&startDate=2026-10-16&endDate=2026-10-22&roleId='",
+   "display_url": "https://clubspark.lta.org.uk/BatterseaParkTennisCourts",
+   "booking_url": "https://clubspark.lta.org.uk/BatterseaParkTennisCourts/Booking/BookByDate"
+  },
+  {
+   "name": "Eel Brook Common",
+   "ok": false,
+   "error": "ClientResponseError: 403, message='Forbidden', url='https://clubspark.lta.org.uk/eelbrookcommon/Booking/GetVenueSessions?resourceID=&startDate=2026-10-16&endDate=2026-10-22&roleId='",
+   "display_url": "https://clubspark.lta.org.uk/eelbrookcommon",
+   "booking_url": "https://clubspark.lta.org.uk/eelbrookcommon/Booking"
+  },
+  {
+   "name": "South Park",
+   "ok": false,
+   "error": "ClientResponseError: 403, message='Forbidden', url='https://clubspark.lta.org.uk/SouthParkFulham/Booking/GetVenueSessions?resourceID=&startDate=2026-10-16&endDate=2026-10-22&roleId='",
+   "display_url": "https://clubspark.lta.org.uk/SouthParkFulham",
+   "booking_url": "https://clubspark.lta.org.uk/SouthParkFulham/Booking/BookByDate"
+  },
+  {
+   "name": "Hurlingham Park",
+   "ok": false,
+   "error": "ClientResponseError: 403, message='Forbidden', url='https://clubspark.lta.org.uk/HurlinghamPark/Booking/GetVenueSessions?resourceID=&startDate=2026-10-16&endDate=2026-10-22&roleId='",
+   "display_url": "https://clubspark.lta.org.uk/HurlinghamPark/PricesandInfo",
+   "booking_url": "https://clubspark.lta.org.uk/HurlinghamPark/Booking/BookByDate"
+  },
+  {
+   "name": "Regent's Park",
+   "ok": false,
+   "error": "ClientResponseError: 403, message='Forbidden', url='https://clubspark.lta.org.uk/RegentsPark/Booking/GetVenueSessions?resourceID=&startDate=2026-10-16&endDate=2026-10-22&roleId='",
+   "display_url": "https://sportsandleisure.royalparks.org.uk/regents-park/sports-activities/adult-tennis",
+   "booking_url": "https://clubspark.lta.org.uk/RegentsPark/Booking/"
+  },
+  {
+   "name": "Hyde Park",
+   "ok": false,
+   "error": "NotImplementedError: no known public data feed for this venue yet",
+   "display_url": "https://sportsandleisure.royalparks.org.uk/hyde-park/sports-activities/adult-tennis",
+   "booking_url": "https://sportsandleisure.royalparks.org.uk/quick-booking"
+  },
+  {
+   "name": "Bishop's Park (Rocks Lane)",
+   "ok": false,
+   "error": "ClientConnectorDNSError: Cannot connect to host api.playtomic.io:443 ssl:default [Name or service not known]",
+   "display_url": "https://playtomic.com/clubs/rocks-lane-bishops-park",
+   "booking_url": "https://playtomic.com/clubs/rocks-lane-bishops-park"
+  }
+ ],
+ "slots": []
+}
