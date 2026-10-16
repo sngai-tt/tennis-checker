@@ -16,6 +16,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -28,7 +29,7 @@ import aiohttp
 LONDON = ZoneInfo("Europe/London")
 
 DAYS_AHEAD = 7          # how many days (including today) to look at
-VENUE_TIMEOUT = 3       # seconds to wait for each web request
+VENUE_TIMEOUT = 5       # seconds to wait for each web request (venues are checked in parallel)
 VENUE_BUDGET = 10       # max seconds spent on any single venue in total
 
 # Only slots inside these windows trigger a push notification.
@@ -114,6 +115,7 @@ VENUES = [
         "platform_type": "playtomic",
         "playtomic_tenant_id": None,                 # filled in automatically by name search
         "playtomic_search": "Rocks Lane",            # used for that search
+        "clubspark_slug": "BishopsParkRocksLane",    # backup: the same courts on ClubSpark
         "booking_url": "https://playtomic.com/clubs/rocks-lane-bishops-park",
         "display_url": "https://playtomic.com/clubs/rocks-lane-bishops-park",
     },
@@ -125,7 +127,34 @@ VENUES = [
 
 SEEN_FILE = "seen_slots.json"
 SLOTS_FILE = "slots.json"
-HEADERS = {"User-Agent": "Mozilla/5.0 (personal court checker)", "Accept": "application/json, */*"}
+# Look like an ordinary browser, because some booking sites reject anything else.
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-GB,en;q=0.9",
+}
+
+PLAYTOMIC_API = "https://playtomic.io/api/v1"
+
+
+async def get_json(session, url, params=None, headers=None):
+    """
+    Fetch a web address and return its JSON. If anything is wrong, raise an
+    error that says exactly what the site sent back (this shows up in the
+    Actions log, which is how we work out what to fix).
+    """
+    async with session.get(url, params=params, headers=headers) as resp:
+        body = await resp.text()
+        snippet = " ".join(body[:150].split())
+        if resp.status != 200:
+            raise RuntimeError(f"HTTP {resp.status} (server: {resp.headers.get('Server', '?')}) {snippet!r}")
+        try:
+            return json.loads(body)
+        except ValueError:
+            raise RuntimeError(f"reply was not JSON (type: {resp.headers.get('Content-Type', '?')}) {snippet!r}")
 
 
 def hhmm(minutes):
@@ -171,9 +200,27 @@ async def fetch_clubspark(session, venue, today):
         "endDate": (today + timedelta(days=DAYS_AHEAD - 1)).isoformat(),
         "roleId": "",
     }
-    async with session.get(url, params=params) as resp:
-        resp.raise_for_status()
-        data = await resp.json(content_type=None)
+    params["_"] = int(time.time() * 1000)   # stops any cached copy being reused
+
+    # Visit the normal booking page first, like a real browser would. This
+    # collects any cookies the site expects before we ask for the data.
+    page = f"https://clubspark.lta.org.uk/{slug}/Booking/BookByDate"
+    warmup = "page visit not attempted"
+    try:
+        async with session.get(page, headers={"Accept": "text/html,application/xhtml+xml,*/*;q=0.8"}) as r:
+            await r.read()
+            warmup = f"page visit status {r.status}"
+    except Exception as exc:  # noqa: BLE001 - just a warm-up, carry on regardless
+        warmup = f"page visit failed ({type(exc).__name__})"
+
+    try:
+        data = await get_json(session, url, params=params, headers={
+            "Referer": page,
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+        })
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"{exc} [{warmup}]") from None
 
     slots = []
     for res in data.get("Resources", []):
@@ -204,12 +251,10 @@ async def fetch_playtomic(session, venue, today):
     """
     tenant_id = venue.get("playtomic_tenant_id")
     if not tenant_id:
-        async with session.get(
-            "https://api.playtomic.io/v1/tenants",
+        tenants = await get_json(
+            session, f"{PLAYTOMIC_API}/tenants",
             params={"tenant_name": venue["playtomic_search"], "sport_id": "TENNIS"},
-        ) as resp:
-            resp.raise_for_status()
-            tenants = await resp.json(content_type=None)
+        )
         if not tenants:
             raise RuntimeError("Playtomic club not found by name search")
         tenant_id = tenants[0]["tenant_id"]
@@ -223,17 +268,17 @@ async def fetch_playtomic(session, venue, today):
             "local_start_min": f"{day.isoformat()}T00:00:00",
             "local_start_max": f"{day.isoformat()}T23:59:59",
         }
-        async with session.get("https://api.playtomic.io/v1/availability", params=params) as resp:
-            resp.raise_for_status()
-            return await resp.json(content_type=None)
+        return await get_json(session, f"{PLAYTOMIC_API}/availability", params=params)
 
     days = [today + timedelta(days=i) for i in range(DAYS_AHEAD)]
     results = await asyncio.gather(*[one_day(d) for d in days], return_exceptions=True)
 
     slots = []
     ok_days = 0
+    first_error = None
     for result in results:
         if isinstance(result, Exception):
+            first_error = first_error or result
             continue
         ok_days += 1
         for res in result:
@@ -247,14 +292,29 @@ async def fetch_playtomic(session, venue, today):
                     start_local.strftime("%H:%M"), end_local.strftime("%H:%M"), uid=rid,
                 ))
     if ok_days == 0:
-        raise RuntimeError("all Playtomic day requests failed")
+        raise RuntimeError(f"all Playtomic day requests failed: {first_error}")
     return slots
+
+
+async def fetch_playtomic_or_clubspark(session, venue, today):
+    """Try Playtomic first. If that fails and the venue also has a ClubSpark page, try that."""
+    try:
+        return await fetch_playtomic(session, venue, today)
+    except Exception as playtomic_error:  # noqa: BLE001
+        if not venue.get("clubspark_slug"):
+            raise
+        try:
+            return await fetch_clubspark(session, venue, today)
+        except Exception as clubspark_error:  # noqa: BLE001
+            raise RuntimeError(
+                f"Playtomic: {playtomic_error} | ClubSpark fallback: {clubspark_error}"
+            ) from None
 
 
 READERS = {
     "clubspark": fetch_clubspark,
     "royalparks": fetch_royalparks,
-    "playtomic": fetch_playtomic,
+    "playtomic": fetch_playtomic_or_clubspark,
 }
 
 
